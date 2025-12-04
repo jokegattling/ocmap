@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OC path helper</title>
+<style>
+    :root{--bg:#f0f0f0;--panel:#fff;--accent:#333}
+    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg)}
+    .app{display:flex;gap:28px;padding:24px;align-items:flex-start;justify-content:center;box-sizing:border-box;min-height:100vh}
+    #mapContainer{width:900px;height:640px;overflow:hidden;position:relative;border:2px solid var(--accent);border-radius:10px;background:#ddd;box-shadow:0 6px 18px rgba(0,0,0,0.08);touch-action:none;cursor:grab;outline:none}
+    #mapContainer.grabbing{cursor:grabbing}
+    #mapImage{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none;max-width:none;max-height:none;pointer-events:auto;draggable:false}
+    .panel{width:380px;display:flex;flex-direction:column;gap:18px; position: relative;} /* Added position: relative; here to contain the absolute switch */
+    .controls{display:flex;gap:12px;align-items:center}
+    .btn{padding:8px 12px;border-radius:8px;border:2px solid var(--accent);background:var(--panel);cursor:pointer;font-weight:600;text-decoration:none;color:var(--accent);text-align:center;line-height:1.2}
+    #colorButton{width:200px;height:200px;border:none;border-radius:50%;cursor:pointer;transition:background .3s,transform .2s,box-shadow .2s;box-shadow:0 8px 15px rgba(0,0,0,.2);display:block;margin:8px 0 12px}
+    #colorButton:hover{transform:scale(1.05);box-shadow:0 12px 20px rgba(0,0,0,.3)}
+    #resetZoomButton,#helpButton{position:absolute;top:12px;z-index:100;width:46px;height:40px;border-radius:8px}
+    #resetZoomButton{right:12px}
+    #helpButton{left:12px}
+
+    .timeline{background:var(--panel);border-radius:10px;padding:12px;border:2px solid var(--accent);box-shadow:0 4px 12px rgba(0,0,0,0.06);max-height:240px;overflow:auto;font-size:13px; position: relative;}
+    .timeline h3{margin:0 0 8px;font-size:15px;text-align:center}
+    .entry{padding:6px 0;border-bottom:1px solid #eee}
+    .entry:last-child{border-bottom:none}
+
+    #helpDropdown{position:absolute;top:55px;left:12px;background:transparent;display:none;z-index:150}
+    #helpDropdown.show{display:block}
+    .helpContent{background:var(--panel);padding:14px 16px;border-radius:10px;border:2px solid var(--accent);width:320px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+    .helpNav{display:flex;align-items:center;justify-content:space-between}
+    .helpNav .btn{width:36px;padding:6px}
+    #tipText{flex:1;padding:0 10px}
+    #tipPageIndicator{margin-top:6px;font-size:12px;color:#666}
+    .moreInfoBtn{display:block;width:100%;padding:10px 12px;margin-top:10px;white-space:normal;text-align:center;box-sizing:border-box;transition:background .25s,box-shadow .25s,transform .15s}
+    .moreInfoBtn:hover{background:#f3f3f3;box-shadow:0 3px 8px rgba(0,0,0,0.15);transform:translateY(-2px)}
+	.pov-link {
+		width:36px; height:36px; padding:0; font-size:12px; line-height:36px;
+		border-radius:50% !important;
+		box-shadow:0 3px 8px rgba(0,0,0,0.2);
+		transition:transform .15s, box-shadow .15s;
+	}
+	.pov-link:hover {
+		transform:scale(1.12);
+		box-shadow:0 6px 14px rgba(0,0,0,0.3);
+	}	
+    @media(max-width:1300px){
+        .app{flex-direction:column;align-items:center}
+        #mapContainer{width:100%;max-width:900px;height:auto;aspect-ratio:900/640;max-height:calc(100vh - 280px)}
+        .panel{width:100%;max-width:420px}
+    }
+
+    .mode-switch {
+      display: inline-block;
+      position: absolute;
+      height: 34px;
+      top: 8px;
+      width: 60px;
+      right: 12px;
+    }
+    .mode-switch input {
+      display: none;
+    }
+    .switch-slider {
+      transition: 0.4s;
+      cursor: pointer;
+      bottom: 0;
+      left: 0;
+      top: 0;
+      right: 0;
+      position: absolute;
+      background-color: #2196F3;
+      border-radius: 34px;
+    }
+    .switch-slider:before {
+      transition: 0.4s;
+      content: "";
+      bottom: 4px;
+      height: 26px;
+      left: 4px;
+      width: 26px;
+      position: absolute;
+      background-color: #FFF;
+      border-radius: 50%;
+    }
+    input:checked + .switch-slider {
+      background-color: #f44336;
+    }
+    input:checked + .switch-slider:before {
+      transform: translateX(26px);
+    }
+</style>
+</head>
+<body>
+<div class="app">
+    <div id="mapContainer" tabindex="0" aria-label="Interactive Occult Crescent route map">
+        <button id="helpButton" class="btn" title="Help" aria-label="Help">?</button>
+
+        <div id="helpDropdown">
+            <div class="helpContent">
+                <div class="helpNav">
+                    <button id="prevTip" class="btn" aria-label="Previous tip">◀</button>
+                    <div id="tipText"></div>
+                    <button id="nextTip" class="btn" aria-label="Next tip">▶</button>
+                </div>
+                <div id="tipPageIndicator"></div>
+<hr style="margin:12px 0;border:none;border-top:1px solid #ccc;">
+
+<!-- POV YouTube Links - Mode Aware -->
+<div style="margin-top:12px; text-align:center; font-size:13px; color:#555;">
+    POV links for each route:
+</div>
+<div id="povLinksContainer" style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:10px 0 6px;">
+    <!-- Mode 1 links (original 5) -->
+    <div id="mode1Links">
+        <a href="https://youtu.be/cBbmeC2E76s" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#ff00ff; color:white;" title="Youtube Magenta Route"></a>
+        <a href="https://youtu.be/xmTo2_mHtJ4" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#ff0000; color:white;" title="Youtube Red Route"></a>
+        <a href="https://youtu.be/ugK4YXXlfeE" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#00f110; color:black;" title="Youtube Green Route"></a>
+        <a href="https://youtu.be/BdRd-DBcU6Q" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#ffff00; color:black;" title="Youtube Yellow Route"></a>
+        <a href="https://youtu.be/id9BCzvFrFk" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#4a86e8; color:white;" title="Youtube Blue Route"></a>
+    </div>
+
+    <!-- Mode 2 links (4-path version) - initially hidden -->
+    <div id="mode2Links" style="display:none;">
+        <a href="" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#ff0000; color:white;" title="Youtube Red Route (Mode 2)"></a>
+        <a href="" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#ff00ff; color:white;" title="Youtube Magenta Route (Mode 2)"></a>
+        <a href="" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#4a86e8; color:white;" title="Youtube Blue Route (Mode 2)"></a>
+        <a href="" target="_blank" rel="noopener noreferrer"
+           class="btn pov-link" style="background:#00f110; color:black;" title="Youtube Green Route (Mode 2)"></a>
+    </div>
+</div>
+<hr style="margin:12px 0;border:none;border-top:1px solid #ccc;">
+<a class="btn moreInfoBtn"
+   href="https://ffxiv.consolegameswiki.com/wiki/The_Occult_Crescent:_South_Horn/Treasure_Coffers"
+   target="_blank">
+   More information about occult crescent treasure
+</a>
+            </div>
+        </div>
+
+        <button id="resetZoomButton" class="btn" title="Reset zoom and pan" aria-label="Reset view">↻</button>
+        <img id="mapImage" src="" alt="Occult Crescent treasure map – current route highlighted" draggable="false">
+    </div>
+
+    <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-direction:column;">
+            <div class="controls" style="margin-bottom:6px">
+                <div id="prevColor" class="btn" aria-label="Previous color">◀</div>
+                <div id="nextColor" class="btn" aria-label="Next color">▶</div>
+            </div>
+            <button id="colorButton" aria-label="Mark current path as completed → automatically advances to oldest untouched path"></button>
+        </div>
+		
+            <label class="mode-switch">
+              <input type="checkbox" id="modeCheckbox" name="modeCheckbox" />
+              <span class="switch-slider"></span>
+            </label>
+
+        <div class="timeline" id="timeline">
+
+            <div id="entries" class="empty">Pressing the big button will create a line in the log</div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* =========================== Config & DOM =========================== */
+const container = document.getElementById('mapContainer');
+const mapImage = document.getElementById('mapImage');
+const resetBtn = document.getElementById('resetZoomButton');
+const helpBtn = document.getElementById('helpButton');
+const btn = document.getElementById('colorButton');
+const prevBtn = document.getElementById('prevColor');
+const nextBtn = document.getElementById('nextColor');
+const entries = document.getElementById('entries');
+const modeCheckbox = document.getElementById('modeCheckbox');
+
+let colors = [];
+let colorMap = {red:'#ff0000',green:'#00f110',blue:'#4a86e8',magenta:'#ff00ff',yellow:'#ffff00'};
+let colorImageURL = {};
+let currentMode = 1;
+const MODE_STORAGE = 'ocPathHelperMode';
+let STORAGE_KEY = '';
+
+let idx = 0, naturalWidth = 1, naturalHeight = 1, scale = 1, minScale = 1, maxScale = 5,
+    posX = 0, posY = 0;
+let isDragging = false, isPinching = false;
+let lastPointer = {x:0,y:0,t:0}, startX = 0, startY = 0, velocity = {x:0,y:0}, momentumRAF = null;
+let initialDistance = 0, initialScale = 0;
+let firstLoad = true; // added back for initial reset
+
+const FRICTION = .95, FRAME_MS = 16;
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+
+/* =========================== Mode Helpers =========================== */
+function getColors(mode) {
+    if (mode === 1) {
+        return ['magenta','red','green','yellow','blue'];
+    } else {
+        return ['red','magenta','blue','green'];
+    }
+}
+
+function getImageURL(mode) {
+    if (mode === 1) {
+        return {
+            red: 'red.webp', green: 'green.webp', blue: 'blue.webp',
+            magenta: 'magenta.webp', yellow: 'yellow.webp'
+        };
+    } else {
+        return {
+            red: 'red_2.webp', green: 'green_2.webp', blue: 'blue_2.webp',
+            magenta: 'magenta_2.webp'
+        };
+    }
+}
+
+function loadMode() {
+    const m = localStorage.getItem(MODE_STORAGE);
+    currentMode = m ? parseInt(m) : 1;
+}
+
+function saveMode() {
+    localStorage.setItem(MODE_STORAGE, currentMode);
+}
+
+function updateModeUI() {
+    modeCheckbox.checked = currentMode === 2;
+    
+    document.getElementById('mode1Links').style.display = currentMode === 1 ? 'flex' : 'none';
+    document.getElementById('mode2Links').style.display = currentMode === 2 ? 'flex' : 'none';
+}
+
+/* =========================== Transform helpers =========================== */
+const applyTransform = () => mapImage.style.transform = `translate(${posX}px,${posY}px) scale(${scale})`;
+
+function recalcScales() {
+    if (!naturalWidth || !naturalHeight) return;
+    const {clientWidth:cw, clientHeight:ch} = container;
+    minScale = Math.min(cw/naturalWidth, ch/naturalHeight);
+    maxScale = minScale * 8;
+    scale = clamp(scale, minScale, maxScale);
+}
+
+function clampPan() {
+    const scaledW = naturalWidth * scale, scaledH = naturalHeight * scale;
+    const {clientWidth:cw, clientHeight:ch} = container;
+    const minX = Math.min(0, cw - scaledW), minY = Math.min(0, ch - scaledH);
+    posX = scaledW <= cw ? (cw - scaledW)/2 : clamp(posX, minX, 0);
+    posY = scaledH <= ch ? (ch - scaledH)/2 : clamp(posY, minY, 0);
+}
+
+function updateView() { clampPan(); applyTransform(); }
+
+/* =========================== Zooming =========================== */
+function zoomAtPoint(cx, cy, delta) {
+    const rect = container.getBoundingClientRect();
+    const mx = cx - rect.left, my = cy - rect.top;
+    const imgX = (mx - posX) / scale, imgY = (my - posY) / scale;
+    const newScale = clamp(scale * (1 + delta), minScale, maxScale);
+    posX = mx - imgX * newScale;
+    posY = my - imgY * newScale;
+    scale = newScale;
+    updateView();
+}
+
+function animateTo(tScale, tX, tY, d = 300) {
+    const sScale = scale, sX = posX, sY = posY, t0 = performance.now();
+    const ease = p => p < .5 ? 4*p*p*p : 1-Math.pow(-2*p+2,3)/2;
+    const step = now => {
+        const p = clamp((now-t0)/d,0,1), e = ease(p);
+        scale = sScale + (tScale-sScale)*e;
+        posX = sX + (tX-sX)*e;
+        posY = sY + (tY-sY)*e;
+        updateView();
+        if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
+
+function resetZoom(anim = true) {
+    recalcScales();
+    const tScale = minScale;
+    const scaledW = naturalWidth * tScale, scaledH = naturalHeight * tScale;
+    const tX = (container.clientWidth - scaledW)/2;
+    const tY = (container.clientHeight - scaledH)/2;
+    if (anim) animateTo(tScale, tX, tY, 300);
+    else { scale = tScale; posX = tX; posY = tY; updateView(); }
+}
+
+function dblclickZoom(x, y) {
+    const target = Math.abs(scale - minScale) < .001 ? clamp(scale*2, minScale, maxScale) : minScale;
+    const delta = (target / scale) - 1;
+    zoomAtPoint(x, y, delta);
+}
+
+/* =========================== Momentum =========================== */
+function cancelMomentum() { if (momentumRAF) { cancelAnimationFrame(momentumRAF); momentumRAF = null; } }
+function startMomentum() {
+    cancelMomentum();
+    const step = () => {
+        posX += velocity.x * FRAME_MS;
+        posY += velocity.y * FRAME_MS;
+        velocity.x *= FRICTION;
+        velocity.y *= FRICTION;
+        if (Math.abs(velocity.x) < .0005 && Math.abs(velocity.y) < .0005) {
+            velocity = {x:0,y:0};
+            clampPan(); applyTransform();
+            return;
+        }
+        const prevX = posX, prevY = posY;
+        clampPan();
+        if (Math.abs(prevX-posX) > .1) velocity.x *= -0.35;
+        if (Math.abs(prevY-posY) > .1) velocity.y *= -0.35;
+        applyTransform();
+        momentumRAF = requestAnimationFrame(step);
+    };
+    momentumRAF = requestAnimationFrame(step);
+}
+
+/* =========================== Pointer handling =========================== */
+function beginDrag(x,y){ isDragging=true; container.classList.add('grabbing'); cancelMomentum(); startX=x-posX; startY=y-posY; lastPointer={x,y,t:performance.now()}; velocity={x:0,y:0}; }
+function moveDrag(x,y){
+    posX = x - startX; posY = y - startY;
+    const now = performance.now(), dt = Math.max(1, now - lastPointer.t);
+    const vx = (x - lastPointer.x)/dt, vy = (y - lastPointer.y)/dt;
+    lastPointer = {x,y,t:now};
+    velocity.x = vx*0.7 + velocity.x*0.3;
+    velocity.y = vy*0.7 + velocity.y*0.3;
+    applyTransform();
+}
+function endDrag(){
+    isDragging = false; container.classList.remove('grabbing');
+    const speed = Math.hypot(velocity.x, velocity.y);
+    if (speed > .01) startMomentum();
+    else { clampPan(); applyTransform(); }
+}
+
+/* Mouse */
+container.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('button,.btn')) return;
+    e.preventDefault();
+    beginDrag(e.clientX, e.clientY);
+});
+document.addEventListener('mousemove', e => isDragging && moveDrag(e.clientX, e.clientY));
+document.addEventListener('mouseup', () => isDragging && endDrag());
+
+/* Touch */
+container.addEventListener('touchstart', e => {
+    if (e.target.closest('button,.btn,a')) return;
+    e.preventDefault(); cancelMomentum();
+    const t = e.touches;
+    if (t.length === 1) beginDrag(t[0].clientX, t[0].clientY);
+    else if (t.length === 2) {
+        isPinching = true; isDragging = false; container.classList.remove('grabbing');
+        const [t1,t2] = t;
+        initialDistance = Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY);
+        initialScale = scale;
+    }
+}, {passive:false});
+
+container.addEventListener('touchmove', e => {
+    if (e.target.closest('button,.btn,a')) return;
+    e.preventDefault();
+    const t = e.touches;
+    if (isDragging && t.length === 1) moveDrag(t[0].clientX, t[0].clientY);
+    else if (isPinching && t.length === 2) {
+        const [t1,t2] = t;
+        const dist = Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY);
+        const newScale = clamp(initialScale * (dist/initialDistance), minScale, maxScale);
+        zoomAtPoint((t1.clientX+t2.clientX)/2, (t1.clientY+t2.clientY)/2, (newScale/scale)-1);
+    }
+}, {passive:false});
+
+container.addEventListener('touchend', e => {
+    if (e.target.closest('button,.btn,a')) return;
+    e.preventDefault();
+    const t = e.touches;
+    if (!t.length && isDragging) endDrag();
+    if (!t.length) isPinching = false;
+    if (t.length === 1 && isPinching) { isPinching = false; beginDrag(t[0].clientX, t[0].clientY); }
+}, {passive:false});
+
+/* Wheel / dblclick / keyboard */
+container.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = (e.deltaY > 0 ? -1 : 1) * .12;
+    const rect = container.getBoundingClientRect();
+    const x = e.shiftKey ? rect.left + rect.width/2 : e.clientX;
+    const y = e.shiftKey ? rect.top + rect.height/2 : e.clientY;
+    zoomAtPoint(x, y, delta);
+}, {passive:false});
+
+container.addEventListener('dblclick', e => {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    dblclickZoom(e.clientX, e.clientY);
+});
+
+container.addEventListener('keydown', e => {
+    const rect = container.getBoundingClientRect();
+    const cx = rect.left + container.clientWidth/2;
+    const cy = rect.top + container.clientHeight/2;
+    if (e.key === '+' || e.key === '=') zoomAtPoint(cx, cy, .2);
+    if (e.key === '-' || e.key === '_') zoomAtPoint(cx, cy, -.2);
+    if (e.key === '0') resetZoom(true);
+    if (e.key.includes('Arrow')) {
+        const step = e.shiftKey ? 100 : 50;
+        if (e.key === 'ArrowLeft') posX += step;
+        if (e.key === 'ArrowRight') posX -= step;
+        if (e.key === 'ArrowUp') posY += step;
+        if (e.key === 'ArrowDown') posY -= step;
+        updateView();
+    }
+});
+
+/* =========================== UI & Logging =========================== */
+let logArray = [], lastPressTimes = {};
+
+function getTime(c) { return lastPressTimes[c] ?? -Infinity; }
+
+function applyColorUI() {
+    const c = colors[idx];
+    btn.style.backgroundColor = colorMap[c] || '#ddd';
+    mapImage.src = colorImageURL[c];
+}
+
+function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({logArray, lastPressTimes, idx}));
+}
+
+function loadState() {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if (!s) return;
+    try {
+        const {logArray:la, lastPressTimes:lt, idx:i} = JSON.parse(s);
+        logArray = la || [];
+        Object.assign(lastPressTimes, lt || {});
+        if (i !== undefined) idx = (i % colors.length); // ensure valid idx for mode
+    } catch(e) { console.error('bad save data', e); }
+    rebuildLog();
+}
+
+function rebuildLog() {
+    entries.innerHTML = '';
+    if (!logArray.length) {
+        entries.classList.add('empty');
+        entries.textContent = 'Log is currently empty.' ;
+        return;
+    }
+    entries.classList.remove('empty');
+    const frag = document.createDocumentFragment();
+    logArray.forEach(({timestamp, color}) => {
+        const ts = new Date(timestamp).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true});
+        const e = document.createElement('div');
+        e.className = 'entry';
+        e.textContent = `${ts} → ${color}`;
+        frag.appendChild(e);
+    });
+    entries.appendChild(frag);
+}
+
+function chooseNextIndex() {
+    const minTime = Math.min(...colors.map(getTime));
+    const candidates = colors.map((c,i) => ({i, t:getTime(c)}))
+                           .filter(o => o.t === minTime)
+                           .map(o => o.i);
+    // start searching right after current index
+    for (let k = 1; k < colors.length; k++) {
+        const next = (idx + k) % colors.length;
+        if (candidates.includes(next)) return next;
+    }
+    // fallback (should never happen)
+    return candidates[0];
+}
+
+/* button handlers */
+prevBtn.addEventListener('click', () => { idx = (idx - 1 + colors.length) % colors.length; applyColorUI(); saveState(); });
+nextBtn.addEventListener('click', () => { idx = (idx + 1) % colors.length; applyColorUI(); saveState(); });
+
+let clickCooldown = false;
+btn.addEventListener('click', () => {
+    if (clickCooldown) return;
+    clickCooldown = true;
+    setTimeout(() => clickCooldown = false, 300); // light debounce, saves storage from autoclickers
+
+    const c = colors[idx], now = Date.now();
+    lastPressTimes[c] = now;
+    logArray.unshift({timestamp: now, color: c});
+    if (logArray.length > 10) logArray.pop();
+
+    rebuildLog();
+    idx = chooseNextIndex();
+    applyColorUI();
+    saveState();
+});
+
+modeCheckbox.addEventListener('change', () => {
+    saveState();
+    currentMode = modeCheckbox.checked ? 2 : 1;
+    saveMode();
+    colors = getColors(currentMode);
+    colorImageURL = getImageURL(currentMode);
+    STORAGE_KEY = `ocPathHelperState${currentMode === 2 ? '_mode2' : ''}`;
+    logArray = [];
+    lastPressTimes = {};
+    idx = 0;
+    loadState();
+    applyColorUI();
+    rebuildLog();
+    updateModeUI();
+});
+
+/* =========================== Image handling =========================== */
+function preloadImageUrls(list) {
+    return Promise.all(list.map(url => new Promise(res => {
+        const i = new Image();
+        i.onload = i.onerror = res;
+        i.src = url;
+    })));
+}
+
+const allImageUrls = [
+    'red.webp', 'green.webp', 'blue.webp', 'magenta.webp', 'yellow.webp',
+    'red_2.webp', 'green_2.webp', 'blue_2.webp', 'magenta_2.webp'
+];
+
+mapImage.addEventListener('load', () => {
+    naturalWidth = mapImage.naturalWidth;
+    naturalHeight = mapImage.naturalHeight;
+    recalcScales();
+    if (firstLoad) {
+        resetZoom(false); // force initial fit 
+        firstLoad = false;
+    } else {
+        clampPan();
+    }
+    applyTransform();
+});
+
+/* =========================== Init =========================== */
+preloadImageUrls(allImageUrls).then(() => {
+    loadMode();
+    STORAGE_KEY = `ocPathHelperState${currentMode === 2 ? '_mode2' : ''}`;
+    colors = getColors(currentMode);
+    colorImageURL = getImageURL(currentMode);
+    loadState();
+    applyColorUI(); // guaranteed to have images ready
+    container.focus(); // keyboard controls work immediately
+    recalcScales();
+    updateView();
+    updateModeUI();
+});
+
+container.addEventListener('click', () => container.focus()); // keep focus after clicking buttons
+
+window.addEventListener('resize', () => { recalcScales(); clampPan(); applyTransform(); });
+resetBtn.addEventListener('click', e => { e.stopPropagation(); resetZoom(true); });
+mapImage.addEventListener('dragstart', e => e.preventDefault());
+window.addEventListener('beforeunload', cancelMomentum);
+
+/* =========================== Help dropdown =========================== */
+const tipPages = [
+    "With 30 bronze chests spawned, a full-scout yields exactly 30 bronze chests.",
+    "However sequential batched scouting will give you better results.",
+    "Only do one path at a time and only start when you are close or at the 30 chest cap.",
+    "Yellow route may be done immediately following green or red to help with sanity.",
+    "This tool can help you keep track of which paths you have done recently so you know which one to do next."
+];
+
+const helpDropdown = document.getElementById("helpDropdown");
+let tipPage = 0;
+
+function updateTip() {
+    document.getElementById("tipText").textContent = tipPages[tipPage];
+    document.getElementById("tipPageIndicator").textContent = `Page ${tipPage + 1} of ${tipPages.length}`;
+    document.getElementById("prevTip").style.visibility = tipPage === 0 ? "hidden" : "visible";
+    document.getElementById("nextTip").style.visibility = tipPage === tipPages.length-1 ? "hidden" : "visible";
+}
+
+helpBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    helpDropdown.classList.toggle("show");
+    updateTip();
+});
+
+document.addEventListener("click", e => {
+    if (!helpDropdown.contains(e.target) && e.target !== helpBtn) {
+        helpDropdown.classList.remove("show");
+    }
+});
+
+document.getElementById("prevTip").addEventListener("click", e => { e.stopPropagation(); tipPage = (tipPage - 1 + tipPages.length) % tipPages.length; updateTip(); });
+document.getElementById("nextTip").addEventListener("click", e => { e.stopPropagation(); tipPage = (tipPage + 1) % tipPages.length; updateTip(); });
+</script>
+</body>
+</html>
