@@ -49,46 +49,6 @@
         #mapContainer{width:100%;max-width:900px;height:auto;aspect-ratio:900/640;max-height:calc(100vh - 280px)}
         .panel{width:100%;max-width:420px}
     }
-
-    .mode-switch {
-      display: inline-block;
-      position: absolute;
-      height: 34px;
-      top: 8px;
-      width: 60px;
-      right: 12px;
-    }
-    .mode-switch input {
-      display: none;
-    }
-    .switch-slider {
-      transition: 0.4s;
-      cursor: pointer;
-      bottom: 0;
-      left: 0;
-      top: 0;
-      right: 0;
-      position: absolute;
-      background-color: #2196F3;
-      border-radius: 34px;
-    }
-    .switch-slider:before {
-      transition: 0.4s;
-      content: "";
-      bottom: 4px;
-      height: 26px;
-      left: 4px;
-      width: 26px;
-      position: absolute;
-      background-color: #FFF;
-      border-radius: 50%;
-    }
-    input:checked + .switch-slider {
-      background-color: #f44336;
-    }
-    input:checked + .switch-slider:before {
-      transform: translateX(26px);
-    }
 </style>
 </head>
 <body>
@@ -151,6 +111,10 @@
     </div>
 
     <div class="panel">
+	        <select id="modeSelect" style="padding:6px 10px; border-radius:8px; border:2px solid var(--accent); background:var(--panel); color:var(--accent); cursor:pointer; font-weight:600;">
+            <option value="2" selected>Lynn Map(FOE)</option>
+            <option value="1">Perry Map(Obsolete)</option>
+        </select>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-direction:column;">
             <div class="controls" style="margin-bottom:6px">
                 <div id="prevColor" class="btn" aria-label="Previous color">◀</div>
@@ -159,10 +123,7 @@
             <button id="colorButton" aria-label="Mark current path as completed → automatically advances to oldest untouched path"></button>
         </div>
 		
-            <label class="mode-switch">
-              <input type="checkbox" id="modeCheckbox" name="modeCheckbox" />
-              <span class="switch-slider"></span>
-            </label>
+
 
         <div class="timeline" id="timeline">
 
@@ -181,7 +142,7 @@ const btn = document.getElementById('colorButton');
 const prevBtn = document.getElementById('prevColor');
 const nextBtn = document.getElementById('nextColor');
 const entries = document.getElementById('entries');
-const modeCheckbox = document.getElementById('modeCheckbox');
+const modeSelect = document.getElementById('modeSelect');
 
 let colors = [];
 let colorMap = {red:'#ff0000',green:'#00f110',blue:'#4a86e8',magenta:'#ff00ff',yellow:'#ffff00'};
@@ -225,7 +186,7 @@ function getImageURL(mode) {
 
 function loadMode() {
     const m = localStorage.getItem(MODE_STORAGE);
-    currentMode = m ? parseInt(m) : 1;
+    currentMode = m ? parseInt(m) : 2;
 }
 
 function saveMode() {
@@ -233,7 +194,7 @@ function saveMode() {
 }
 
 function updateModeUI() {
-    modeCheckbox.checked = currentMode === 2;
+    modeSelect.value = currentMode;
     
     document.getElementById('mode1Links').style.display = currentMode === 1 ? 'flex' : 'none';
     document.getElementById('mode2Links').style.display = currentMode === 2 ? 'flex' : 'none';
@@ -503,9 +464,9 @@ btn.addEventListener('click', () => {
     saveState();
 });
 
-modeCheckbox.addEventListener('change', () => {
+modeSelect.addEventListener('change', () => {
     saveState();
-    currentMode = modeCheckbox.checked ? 2 : 1;
+    currentMode = parseInt(modeSelect.value);
     saveMode();
     colors = getColors(currentMode);
     colorImageURL = getImageURL(currentMode);
